@@ -10,14 +10,14 @@ with open("texts_iamstiveschannel.json", "r+", encoding='UTF-8') as bot_text:
     bot_text.close()
 
 
-with open("token_and_chats.json", "r+") as bot_data:
+with open("bot_data.json", "r+") as bot_data:
     """Getting information about bot and chats etc"""
     file = json.load(bot_data)
     TOKEN = file["token"]
     main_chat_id = int(file["suggest_chat_id"])
     bot_id = int(file["suggest_bot_id"])
-    bot_data.close()
     channel_id = file["channel_id"]
+    bot_data.close()
 
 
 # Initialising bot, database, creating buffer with groups of messages
@@ -111,12 +111,10 @@ async def reply_to_message(message):
                     await talk(msg_to_reply[0], data["can_reply_to_msg"],
                                reply_to_msg=db.get_chat_state(msg_to_reply[0]), no_sound=True)
                 db.make_replays_copied(msg_to_reply[0], reply)
+                reply = []
 
-            except Exception as e:
-                print(5)
-                await talk(message.chat.id, data["user_banned_bot"], reply_to_msg=message.id)
+            finally:
                 db.make_replays_copied(msg_to_reply[0], reply, banned_msgs=True)
-                print(e, e.args)
 
 
 @bot.message_handler(commands=["start", "ban", "unban", "post"])
