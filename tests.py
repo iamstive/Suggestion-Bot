@@ -1,10 +1,3 @@
-import json
+message = [1, 2, 3, 4, 0, 6]
 
-with open("bot_data.json", "r+") as bot_data:
-    """Getting information about bot and chats etc"""
-    file = json.load(bot_data)
-    TOKEN = file["token"]
-    main_chat_id = int(file["suggest_chat_id"])
-    bot_id = int(file["sugget_bot_id"])
-    channel_id = file["channel_id"]
-    bot_data.close()
+print(message[4] if message[4] > 3 else message[0])

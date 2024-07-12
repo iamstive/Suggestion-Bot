@@ -72,46 +72,91 @@ async def add_odd_replays(message: {}) -> None:
                           reply_to_msg=msg_info_id)
 
 
-async def find_file_id(content_type: str, fjson: dict) -> (str, str):
+async def find_file_id(content_type: str, json_dict: dict) -> (str, str):
     """Returns file id if exists"""
     try:
-        caption = fjson['caption']
+        caption = json_dict['caption']
     except KeyError:
         caption = ''
     if content_type == 'photo':
-        return fjson[content_type][-1]['file_id'], caption
-    if content_type in ["video", "audio", "sticker", "voice", "video_note", "document"]:
-        return fjson[content_type]['file_id'], caption
+        return json_dict[content_type][-1]['file_id'], caption
+    if content_type in ["video", "audio", "sticker", "voice", "video_note", "document", "animation"]:
+        return json_dict[content_type]['file_id'], caption
     if content_type == 'text':
-        return content_type, fjson[content_type]
+        return content_type, json_dict[content_type]
     if content_type == 'poll':
         return content_type, ''
 
 
-async def copy_messages(chat_id, messages: list | tuple, not_copy: list, additional_caption: str) -> None:
+async def copy_messages(chat_id: int, from_chat_id: int, messages: list | tuple, not_copy: list,
+                        additional_caption: str, *args, reply_to_msg: int = None, add_c_above: bool = True) -> None:
     caption_from_media = messages[0][-1]
+    print('tri', caption_from_media, not_copy, args)
+    print(messages)
+    if caption_from_media and ('0' not in not_copy):
+        if add_c_above:
+            caption = additional_caption.format(*args) + '\n\n' + caption_from_media
+        else:
+            caption = caption_from_media + '\n\n' + additional_caption.format(*args)
+    else:
+        caption = additional_caption.format(*args)
+        print('pat', *args, caption)
     for i in not_copy:
         if i.isdigit() and i != '0':
             try:
                 messages.pop(int(i) - 1)
             except IndexError:
                 continue
-    if (len(messages[0]) == 9 and messages[0][3]) or (len(messages[0]) == 9 and messages[0][1]):
+    print('heh')
+    if (len(messages[0]) == 9 and messages[0][3]) or (len(messages[0]) == 8 and messages[0][1]):
         media_group = []
         ft = True
         for i in messages:
             if i[-3] == "video":
-                media_group.append(InputMediaVideo(i[-2], caption=caption_from_media))
+                media_group.append(InputMediaVideo(i[-2], caption=caption, parse_mode="HTML",
+                                                   show_caption_above_media=add_c_above))
             if i[-3] == "photo":
-                media_group.append(InputMediaPhoto(i[-2], caption=caption_from_media))
+                media_group.append(InputMediaPhoto(i[-2], caption=caption, parse_mode="HTML",
+                                                   show_caption_above_media=add_c_above))
             if i[-3] == "document":
-                media_group.append(InputMediaDocument(i[-2], caption=caption_from_media))
+                media_group.append(InputMediaDocument(i[-2], caption=caption, parse_mode="HTML"))
             if i[-3] == "audio":
-                media_group.append(InputMediaAudio(i[-2], caption=caption_from_media))
+                media_group.append(InputMediaAudio(i[-2], caption=caption, parse_mode="HTML"))
             if ft:
                 ft = False
-        await bot.send_media_group(chat_id, [i[-2] for i in messages],)
-        await bot.sen
+                caption = None
+        await bot.send_media_group(chat_id, media_group, reply_to_message_id=reply_to_msg)
+    else:
+        for message in messages:
+            if message[-3] == "text":
+                await talk(chat_id, caption, reply_to_msg=reply_to_msg)
+            if message[-3] == "animation":
+                await bot.send_animation(chat_id, message[-2], caption=caption, reply_to_message_id=reply_to_msg,
+                                         parse_mode="HTML", show_caption_above_media=add_c_above)
+            if message[-3] == "photo":
+                await bot.send_photo(chat_id, message[-2], caption=caption, reply_to_message_id=reply_to_msg,
+                                     parse_mode="HTML", show_caption_above_media=add_c_above)
+            if message[-3] == "video":
+                await bot.send_video(chat_id, message[-2], caption=caption, reply_to_message_id=reply_to_msg,
+                                     parse_mode="HTML", show_caption_above_media=add_c_above)
+            if message[-3] == "audio":
+                await bot.send_audio(chat_id, message[-2], caption=caption,
+                                     reply_to_message_id=reply_to_msg, parse_mode="HTML")
+            if message[-3] == "sticker":
+                await talk(chat_id, caption, reply_to_msg=reply_to_msg)
+                await bot.send_sticker(chat_id, message[-2])
+            if message[-3] == "voice":
+                await bot.send_voice(chat_id, message[-2], caption=caption,
+                                     reply_to_message_id=reply_to_msg, parse_mode="HTML")
+            if message[-3] == "video_note":
+                await talk(chat_id, caption, reply_to_msg=reply_to_msg)
+                await bot.send_video_note(chat_id, message[-2], reply_to_message_id=reply_to_msg)
+            if message[-3] == "document":
+                await bot.send_document(chat_id, message[-2], caption=caption,
+                                        reply_to_message_id=reply_to_msg, parse_mode="HTML")
+            if message[-3] == "poll":
+                await talk(chat_id, caption, reply_to_msg=reply_to_msg)
+                await bot.copy_message(chat_id, from_chat_id, message[4] if message[4] > 3 else message[0])
 
 
 async def cooldown_timer_forward(seconds: float, chat_id: int) -> []:
@@ -191,30 +236,32 @@ async def start(message):
                     await talk(message.chat.id, data["wrong_unban_user"], reply_to_msg=message.chat.id)
 
         if '/post' in message.text and message.reply_to_message and message.reply_to_message.from_user.id == bot_id:
-            messages_to_post = db.out_message_info_group(message.reply_to_message.id)
+            messages_to_post = [db.out_message_info_group(message.reply_to_message.id),]
             del_params = []
-            if messages_to_post[3]:
-                messages_to_post = db.out_messages_group_id(messages_to_post[0], messages_to_post[3])
+            if messages_to_post[0][3]:
+                messages_to_post = db.out_messages_group_id(messages_to_post[0][0], messages_to_post[0][3])
             if '-' in message.text:
                 try:
+                    print('adin', messages_to_post)
                     del_params = sorted(
                         list(
                             set(
                                 map(str, message.text[message.text.index('-') + 1:].split())
                             )
-                        ),
-                    reverse=True)
+                        ), reverse=True)
                 except ValueError or IndexError:
                     await talk(main_chat_id, data["wrong_posting"], reply_to_msg=message.id)
                     return
-            await copy_messages(channel_id, messages_to_post, del_params, data["thanks_for_suggest"])
+            print('dva', messages_to_post, del_params, messages_to_post[0][1])
+            await copy_messages(channel_id, message.chat.id, messages_to_post, del_params, data["thanks_for_suggest"],
+                                messages_to_post[0][1])
             await talk(main_chat_id, data["posted_successful"], reply_to_msg=message.id)
 
 
 @bot.message_handler(content_types=["text", "photo", "animation", "video", "audio", "sticker", "voice", "video_note",
                                     "document", "poll"])
 async def take_a_post(message):
-
+    print(message)
     db.set_chat_state(message.chat.id, message.id)
     if message.chat.id != main_chat_id and await check_user_ban(message):
         file_info = await find_file_id(message.content_type, message.json)
