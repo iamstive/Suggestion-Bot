@@ -11,25 +11,33 @@ class Messages:
                                 chat_id BIGINT,
                                 username STR,
                                 msg_id BIGINT,
-                                id_in_group BIGINT,
                                 group_id BIGINT,
-                                was_forwarded INT)""")  # Messages from users
+                                id_in_group BIGINT,
+                                was_forwarded INT,
+                                content_type STR,
+                                file_id STR,
+                                caption STR)""")  # Messages from users
             self.cursor.execute("""CREATE TABLE IF NOT EXISTS UsersReplays(
                                 id_in_group BIGINT,
                                 group_id BIGINT,
                                 chat_id BIGINT,
                                 msg_id BIGINT,
-                                was_copied INT)""")  # Messages from group
+                                was_copied INT
+                                content_type STR,
+                                file_id STR,
+                                caption STR)""")  # Messages from group
             self.cursor.execute("""CREATE TABLE IF NOT EXISTS UsersMsgStates(chat_id BIGINT, msg_state BIGINT)""")
             self.cursor.execute("""CREATE TABLE IF NOT EXISTS BannedUsers(chat_id BIGINT, username STR)""")
 
-    def add_message(self, chat_id: int, username: str, msg_id: int, group_id: int) -> None:
+    def add_message(self, chat_id: int, username: str, msg_id: int, group_id: int, content_type: str,
+                    file_id: str, caption: str) -> None:
         """Adding a message from the user to the table. Accepts the necessary data about the user and chat from
         "message" dictionary. Example: message.chat.id, message.from_user.username, message. id"""
         with self.connect:
-            self.cursor.execute(f"INSERT INTO UsersSuggests('chat_id', 'username', 'msg_id', 'id_in_group',"
-                                f"'group_id', 'was_forwarded') VALUES(?, ?, ?, ?, ?, ?)",
-                                (chat_id, username, msg_id, None, group_id, 0))
+            self.cursor.execute(f"INSERT INTO UsersSuggests('chat_id', 'username', 'msg_id', 'group_id',"
+                                f"'id_in_group', 'was_forwarded', 'content_type', 'file_id', 'caption')"
+                                f"VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                (chat_id, username, msg_id,  group_id, None, 0, content_type, file_id, caption))
 
     def out_messages_to_forward(self, chat_id: int) -> [(), (), ...]:
         """Returns all messages that have not yet been forwarded to the group in a list format with tuples"""
