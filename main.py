@@ -111,7 +111,9 @@ async def copy_messages(chat_id: int, from_chat_id: int, messages: list | tuple,
     if (len(messages[0]) == 9 and messages[0][3]) or (len(messages[0]) == 8 and messages[0][1]):
         media_group = []
         ft = True
+        cnt = 0
         for i in messages:
+            cnt += 1
             if i[-3] == "video":
                 media_group.append(InputMediaVideo(i[-2], caption=caption, parse_mode="HTML",
                                                    show_caption_above_media=add_c_above))
@@ -119,9 +121,15 @@ async def copy_messages(chat_id: int, from_chat_id: int, messages: list | tuple,
                 media_group.append(InputMediaPhoto(i[-2], caption=caption, parse_mode="HTML",
                                                    show_caption_above_media=add_c_above))
             if i[-3] == "document":
-                media_group.append(InputMediaDocument(i[-2], caption=caption, parse_mode="HTML"))
+                t_caption = ''
+                if cnt == len(messages):
+                    t_caption = caption
+                media_group.append(InputMediaDocument(i[-2], caption=t_caption, parse_mode="HTML"))
             if i[-3] == "audio":
-                media_group.append(InputMediaAudio(i[-2], caption=caption, parse_mode="HTML"))
+                t_caption = ''
+                if cnt == len(messages):
+                    t_caption = caption
+                media_group.append(InputMediaAudio(i[-2], caption=t_caption, parse_mode="HTML"))
             if ft:
                 ft = False
                 caption = None
@@ -252,6 +260,11 @@ async def start(message):
                 except ValueError or IndexError:
                     await talk(main_chat_id, data["wrong_posting"], reply_to_msg=message.id)
                     return
+            for i in range(len(del_params) - 1, -1, -1):
+                if del_params[i].isdigit():
+                    continue
+                del_params.pop(i)
+            del_params = sorted(list(map(int, del_params)), reverse=True)
             print('dva', messages_to_post, del_params, messages_to_post[0][1])
             await copy_messages(channel_id, message.chat.id, messages_to_post, del_params, data["thanks_for_suggest"],
                                 messages_to_post[0][1])
