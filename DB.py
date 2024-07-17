@@ -22,7 +22,7 @@ class Messages:
                                 group_id BIGINT,
                                 chat_id BIGINT,
                                 msg_id BIGINT,
-                                was_copied INT
+                                was_copied INT,
                                 content_type STR,
                                 file_id STR,
                                 caption STR)""")  # Messages from group
@@ -45,16 +45,21 @@ class Messages:
             return self.cursor.execute("SELECT * FROM UsersSuggests WHERE chat_id=? AND was_forwarded=?",
                                        (chat_id, 0)).fetchall()
 
-    def make_message_forwarded(self, chat_id: int, group_id: int, messages: list) -> None:
+    def make_message_forwarded(self, chat_id: int, group_id: int, messages: list, emp_msgs: bool = False) -> None:
         """Marks all forwarded messages in the database"""
         with self.connect:
+            print(chat_id, group_id, messages)
             id_in_group = self.get_chat_state(group_id)
             for message in messages:
-                id_in_group += 1
+                if emp_msgs:
+                    id_in_group = None
+                else:
+                    id_in_group += 1
                 self.cursor.execute("UPDATE UsersSuggests SET id_in_group=? WHERE chat_id=? AND msg_id=?",
                                     (id_in_group, chat_id, message))
                 self.cursor.execute("UPDATE UsersSuggests SET was_forwarded=? WHERE id_in_group=?", (1, id_in_group))
-            self.set_chat_state(group_id, id_in_group)
+            if not emp_msgs:
+                self.set_chat_state(group_id, id_in_group)
 
     def out_message_info_group(self, id_in_group: int) -> ():
         """Returns information about any message sent by the bot in the group by message ID in main group"""
@@ -97,12 +102,14 @@ class Messages:
         with self.connect:
             self.cursor.execute("DELETE FROM BannedUsers WHERE chat_id=?", (chat_id,))
 
-    def add_reply(self, id_in_group: int, group_id: int, chat_id: int) -> None:
+    def add_reply(self, id_in_group: int, group_id: int, chat_id: int, content_type: str,
+                  file_id: str = None, caption: str = None) -> None:
         """Adds a response message to the appropriate table, the information required for transmission can be obtained
         using the out_message_info() method and the message dictionary"""
         with self.connect:
             self.cursor.execute("INSERT INTO UsersReplays('id_in_group', 'group_id', 'chat_id', 'msg_id',"
-                                "'was_copied') VALUES(?, ?, ?, ?, ?)", (id_in_group, group_id, chat_id, None, 0))
+                                "'was_copied', 'content_type', 'file_id', 'caption') VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                                (id_in_group, group_id, chat_id, None, 0, content_type, file_id, caption))
 
     def out_reply_info_group(self, id_in_group: int) -> ():
         """Returns information about any reply to message forwarded by bot by its id in group"""

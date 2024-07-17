@@ -33,7 +33,7 @@ async def talk(chat_id: int, text_to_send: str, *args, reply_to_msg=None, no_sou
         now_msg_state = db.get_chat_state(chat_id)
         db.set_chat_state(chat_id, now_msg_state + 1)
         await bot.send_message(chat_id, text_to_send.format(*args), reply_to_message_id=reply_to_msg,
-                               disable_notification=no_sound, parse_mode='HTML')
+                               disable_notification=no_sound, parse_mode='HTML', disable_web_page_preview=True)
     except Exception as e:
         if '403' in str(e):
             await talk(main_chat_id, data["user_banned_bot"])
@@ -52,7 +52,7 @@ async def check_user_ban(message: {}) -> bool:
     return True
 
 
-async def add_odd_replays(message: {}) -> None:
+async def add_odd_replays(message: {}) -> (str, int):
     """Creates dialog branch if user had been replied for own message or message from group"""
     cur_msg_info = db.out_message_info_chat(message.chat.id, message.reply_to_message.id)
     prev_msg_info = (data["successfully_sent"] == message.reply_to_message.text
@@ -60,100 +60,160 @@ async def add_odd_replays(message: {}) -> None:
                      db.out_message_info_chat(message.chat.id, message.reply_to_message.id - 1))
     if cur_msg_info or prev_msg_info:  # Case for own message
         msg_info_id = (cur_msg_info or prev_msg_info)[4]
-        return await talk(main_chat_id, data["answer_to_forward"], message.from_user.first_name,
-                          reply_to_msg=msg_info_id)
+        return data["answer_to_forward"], msg_info_id
     cur_reply_info = db.out_reply_info_chat(message.chat.id, message.reply_to_message.id)
     next_reply_info = (data["reply_to_msg"] == message.reply_to_message.text
                        and
                        db.out_reply_info_chat(message.chat.id, message.reply_to_message.id + 1))
     if cur_reply_info or next_reply_info:  # Case for message form group
         msg_info_id = (cur_reply_info or next_reply_info)[0]
-        return await talk(main_chat_id, data["answer_to_reply"], message.from_user.first_name,
-                          reply_to_msg=msg_info_id)
+        return data["answer_to_reply"], msg_info_id
 
 
-async def find_file_id(content_type: str, fjson: dict) -> (str, str):
+async def find_file_id(content_type: str, json_dict: dict) -> (str, str):
     """Returns file id if exists"""
     try:
-        caption = fjson['caption']
+        caption = json_dict['caption']
     except KeyError:
         caption = ''
     if content_type == 'photo':
-        return fjson[content_type][-1]['file_id'], caption
-    if content_type in ["video", "audio", "sticker", "voice", "video_note", "document"]:
-        return fjson[content_type]['file_id'], caption
+        return json_dict[content_type][-1]['file_id'], caption
+    if content_type in ["video", "audio", "sticker", "voice", "video_note", "document", "animation"]:
+        return json_dict[content_type]['file_id'], caption
     if content_type == 'text':
-        return content_type, fjson[content_type]
+        return content_type, json_dict[content_type]
     if content_type == 'poll':
         return content_type, ''
 
 
-async def copy_messages(chat_id, messages: list | tuple, not_copy: list, additional_caption: str) -> None:
+async def copy_messages(chat_id: int, from_chat_id: int, messages: list, not_copy: list, additional_caption: str, *args,
+                        reply_to_msg: int = None, add_c_above: bool = True) -> None | bool:
     caption_from_media = messages[0][-1]
+    print('tri', caption_from_media, not_copy, args)
+    print(messages)
+    if caption_from_media and (0 not in not_copy):
+        if add_c_above:
+            caption = additional_caption.format(*args) + '\n\n' + caption_from_media
+        else:
+            caption = caption_from_media + '\n\n' + additional_caption.format(*args)
+    else:
+        caption = additional_caption.format(*args)
+        print('pat', *args, caption)
     for i in not_copy:
-        if i.isdigit() and i != '0':
+        if i != 0:
             try:
                 messages.pop(int(i) - 1)
             except IndexError:
                 continue
-    if (len(messages[0]) == 9 and messages[0][3]) or (len(messages[0]) == 9 and messages[0][1]):
-        media_group = []
-        ft = True
-        for i in messages:
-            if i[-3] == "video":
-                media_group.append(InputMediaVideo(i[-2], caption=caption_from_media))
-            if i[-3] == "photo":
-                media_group.append(InputMediaPhoto(i[-2], caption=caption_from_media))
-            if i[-3] == "document":
-                media_group.append(InputMediaDocument(i[-2], caption=caption_from_media))
-            if i[-3] == "audio":
-                media_group.append(InputMediaAudio(i[-2], caption=caption_from_media))
-            if ft:
-                ft = False
-        await bot.send_media_group(chat_id, [i[-2] for i in messages],)
-        await bot.sen
+    print('heh')
+    try:
+        if (len(messages[0]) == 9 and messages[0][3]) or (len(messages[0]) == 8 and messages[0][1]):
+            media_group = []
+            ft = True
+            cnt = 0
+            for i in messages:
+                cnt += 1
+                if i[-3] == "video":
+                    media_group.append(InputMediaVideo(i[-2], caption=caption, parse_mode="HTML",
+                                                       show_caption_above_media=add_c_above))
+                if i[-3] == "photo":
+                    media_group.append(InputMediaPhoto(i[-2], caption=caption, parse_mode="HTML",
+                                                       show_caption_above_media=add_c_above))
+                if i[-3] == "document":
+                    t_caption = ''
+                    if cnt == len(messages):
+                        t_caption = caption
+                    media_group.append(InputMediaDocument(i[-2], caption=t_caption, parse_mode="HTML"))
+                if i[-3] == "audio":
+                    t_caption = ''
+                    if cnt == len(messages):
+                        t_caption = caption
+                    media_group.append(InputMediaAudio(i[-2], caption=t_caption, parse_mode="HTML"))
+                if ft:
+                    ft = False
+                    caption = None
+            await bot.send_media_group(chat_id, media_group, reply_to_message_id=reply_to_msg)
+        else:
+            for message in messages:
+                if message[-3] == "text":
+                    await bot.send_message(chat_id, caption, reply_to_message_id=reply_to_msg, parse_mode="HTML",
+                                           disable_web_page_preview=True)
+                if message[-3] == "animation":
+                    await bot.send_animation(chat_id, message[-2], caption=caption, reply_to_message_id=reply_to_msg,
+                                             parse_mode="HTML", show_caption_above_media=add_c_above)
+                if message[-3] == "photo":
+                    await bot.send_photo(chat_id, message[-2], caption=caption, reply_to_message_id=reply_to_msg,
+                                         parse_mode="HTML", show_caption_above_media=add_c_above)
+                if message[-3] == "video":
+                    await bot.send_video(chat_id, message[-2], caption=caption, reply_to_message_id=reply_to_msg,
+                                         parse_mode="HTML", show_caption_above_media=add_c_above)
+                if message[-3] == "audio":
+                    await bot.send_audio(chat_id, message[-2], caption=caption,
+                                         reply_to_message_id=reply_to_msg, parse_mode="HTML")
+                if message[-3] == "sticker":
+                    await talk(chat_id, caption, reply_to_msg=reply_to_msg)
+                    await bot.send_sticker(chat_id, message[-2])
+                if message[-3] == "voice":
+                    await bot.send_voice(chat_id, message[-2], caption=caption,
+                                         reply_to_message_id=reply_to_msg, parse_mode="HTML")
+                if message[-3] == "video_note":
+                    await talk(chat_id, caption, reply_to_msg=reply_to_msg)
+                    await bot.send_video_note(chat_id, message[-2], reply_to_message_id=reply_to_msg)
+                if message[-3] == "document":
+                    print('alm', message)
+                    await bot.send_document(chat_id, message[-2], caption=caption,
+                                            reply_to_message_id=reply_to_msg, parse_mode="HTML")
+                if message[-3] == "poll":
+                    await talk(chat_id, caption, reply_to_msg=reply_to_msg)
+                    await bot.copy_message(chat_id, from_chat_id, message[(message[4] > 3) * 2])
+                caption = ''
+    except Exception as e:
+        if len(messages[0]) == 8:
+            reply = [i[0] for i in messages]
+            db.make_replays_copied(chat_id, reply, banned_msgs=True)
+        else:
+            reply = [i[2] for i in messages]
+            db.make_message_forwarded(chat_id, main_chat_id, reply, emp_msgs=True)
+        if 'USER_IS_BLOCKED' in str(e):
+            await talk(main_chat_id, data["user_banned_bot"], reply_to_msg=messages[0][0])
+            return True
 
 
-async def cooldown_timer_forward(seconds: float, chat_id: int) -> []:
+async def cooldown_timer_forward(seconds: float, chat_id: int) -> [(), (), ...]:
     await asyncio.sleep(seconds)
-    q = []
-    for i in db.out_messages_to_forward(chat_id):
-        q.append(i[2])
-    return q
+    return db.out_messages_to_forward(chat_id)
 
 
-async def cooldown_timer_reply(seconds: float, chat_id: int) -> []:
+async def cooldown_timer_reply(seconds: float, chat_id: int) -> [(), (), ...]:
     await asyncio.sleep(seconds)
-    q = []
-    for i in db.out_replays_to_copy(chat_id):
-        q.append(i[0])
-    return q
+    return db.out_replays_to_copy(chat_id)
 
 
 async def reply_to_message(message):
     if message.reply_to_message and message.reply_to_message.from_user.id == bot_id:
         msg_to_reply = db.out_message_info_group(message.reply_to_message.message_id)
+        print('info')
         if not msg_to_reply:
             return
-        db.add_reply(message.id, message.media_group_id, msg_to_reply[0])
+        file_info = await find_file_id(message.content_type, message.json)
+        print('info_file')
+        db.add_reply(message.id, message.media_group_id, msg_to_reply[0], message.content_type, *file_info)
         if len(db.out_replays_to_copy(msg_to_reply[0])) == 1:
+            print('letssssss goooooo')
             reply = await cooldown_timer_reply(0.25, msg_to_reply[0])
             for i in db.out_banned_users():
                 if msg_to_reply[0] in i:
                     db.make_replays_copied(msg_to_reply[0], reply, banned_msgs=True)
                     return
-            try:
-                await talk(msg_to_reply[0], data["reply_to_msg"], reply_to_msg=msg_to_reply[2], no_sound=True)
-                await bot.copy_messages(msg_to_reply[0], message.chat.id, reply)
+            print('almost here!')
+            fail = await copy_messages(msg_to_reply[0], main_chat_id, reply, [], data["reply_to_msg"],
+                                       reply_to_msg=msg_to_reply[2], add_c_above=True)
+            if not fail:
                 await talk(message.chat.id, data["reply_success"], reply_to_msg=message.id)
                 if msg_to_reply[2] % 7 == 0:
                     await talk(msg_to_reply[0], data["can_reply_to_msg"],
                                reply_to_msg=db.get_chat_state(msg_to_reply[0]), no_sound=True)
-                db.make_replays_copied(msg_to_reply[0], reply)
-                reply = []
-            except Exception as e:
-                if 'USER_IS_BLOCKED' in str(e):
-                    db.make_replays_copied(msg_to_reply[0], reply, banned_msgs=True)
+                db.make_replays_copied(msg_to_reply[0], [i[0] for i in reply])
 
 
 @bot.message_handler(commands=["start", "ban", "unban", "post"])
@@ -191,43 +251,47 @@ async def start(message):
                     await talk(message.chat.id, data["wrong_unban_user"], reply_to_msg=message.chat.id)
 
         if '/post' in message.text and message.reply_to_message and message.reply_to_message.from_user.id == bot_id:
-            messages_to_post = db.out_message_info_group(message.reply_to_message.id)
+            messages_to_post = [db.out_message_info_group(message.reply_to_message.id),]
             del_params = []
-            if messages_to_post[3]:
-                messages_to_post = db.out_messages_group_id(messages_to_post[0], messages_to_post[3])
+            if messages_to_post[0][3]:
+                messages_to_post = db.out_messages_group_id(messages_to_post[0][0], messages_to_post[0][3])
             if '-' in message.text:
                 try:
-                    del_params = sorted(
-                        list(
-                            set(
-                                map(str, message.text[message.text.index('-') + 1:].split())
-                            )
-                        ),
-                    reverse=True)
+                    print('adin', messages_to_post)
+                    del_params = sorted(int(i) for i in set(
+                        map(str, message.text[message.text.index('-') + 1:].split())
+                    ) if i.isdigit())
                 except ValueError or IndexError:
                     await talk(main_chat_id, data["wrong_posting"], reply_to_msg=message.id)
                     return
-            await copy_messages(channel_id, messages_to_post, del_params, data["thanks_for_suggest"])
+            print('dva', messages_to_post, del_params, messages_to_post[0][1])
+            await copy_messages(channel_id, message.chat.id, messages_to_post, del_params, data["thanks_for_suggest"],
+                                messages_to_post[0][1], add_c_above=False)
             await talk(main_chat_id, data["posted_successful"], reply_to_msg=message.id)
 
 
 @bot.message_handler(content_types=["text", "photo", "animation", "video", "audio", "sticker", "voice", "video_note",
                                     "document", "poll"])
 async def take_a_post(message):
-
+    print(message)
     db.set_chat_state(message.chat.id, message.id)
     if message.chat.id != main_chat_id and await check_user_ban(message):
         file_info = await find_file_id(message.content_type, message.json)
         db.add_message(message.chat.id, message.from_user.first_name, message.id, message.media_group_id,
                        message.content_type, *file_info)
         if len(db.out_messages_to_forward(message.chat.id)) == 1:
+            add_c = f"""<a href="t.me/{message.from_user.username}">{message.from_user.first_name}</a> """
             msgs_to_forward = await cooldown_timer_forward(0.25, message.chat.id)
+            reply_info = None, None
             if message.reply_to_message:
-                await add_odd_replays(message)
-            await bot.forward_messages(from_chat_id=message.chat.id, chat_id=main_chat_id,
-                                       message_ids=msgs_to_forward)
-            db.make_message_forwarded(message.chat.id, main_chat_id, msgs_to_forward)
-            await talk(message.chat.id, data["successfully_sent"], reply_to_msg=msgs_to_forward[0], no_sound=True)
+                reply_info = await add_odd_replays(message)
+                add_c += reply_info[0]
+            await copy_messages(main_chat_id, message.chat.id, msgs_to_forward, [], add_c,
+                                reply_to_msg=reply_info[1])
+            print('shtirliz was here', msgs_to_forward, [i[2] for i in msgs_to_forward])
+            db.make_message_forwarded(message.chat.id, main_chat_id, [i[2] for i in msgs_to_forward])
+            print('wth')
+            await talk(message.chat.id, data["successfully_sent"], reply_to_msg=msgs_to_forward[0][2], no_sound=True)
     else:
         await reply_to_message(message)
 
