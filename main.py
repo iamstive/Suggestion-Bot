@@ -1,5 +1,5 @@
 from telebot.async_telebot import AsyncTeleBot
-from telebot.types import InputMediaPhoto, InputMediaAudio, InputMediaDocument, InputMediaVideo
+from telebot.types import InputMediaPhoto, InputMediaAudio, InputMediaDocument, InputMediaVideo, ReactionTypeEmoji
 import json
 import asyncio
 import DB
@@ -55,19 +55,14 @@ async def check_user_ban(message: {}) -> bool:
 async def add_odd_replays(message: {}) -> (str, int):
     """Creates dialog branch if user had been replied for own message or message from group"""
     cur_msg_info = db.out_message_info_chat(message.chat.id, message.reply_to_message.id)
-    prev_msg_info = (data["successfully_sent"] == message.reply_to_message.text
+    prev_msg_info = (data["suc_sent"] == message.reply_to_message.text
                      and
                      db.out_message_info_chat(message.chat.id, message.reply_to_message.id - 1))
     if cur_msg_info or prev_msg_info:  # Case for own message
         msg_info_id = (cur_msg_info or prev_msg_info)[4]
-        return data["answer_to_forward"], msg_info_id
-    cur_reply_info = db.out_reply_info_chat(message.chat.id, message.reply_to_message.id)
-    next_reply_info = (data["reply_to_msg"] == message.reply_to_message.text
-                       and
-                       db.out_reply_info_chat(message.chat.id, message.reply_to_message.id + 1))
-    if cur_reply_info or next_reply_info:  # Case for message form group
-        msg_info_id = (cur_reply_info or next_reply_info)[0]
-        return data["answer_to_reply"], msg_info_id
+        return "additional", msg_info_id
+    if db.out_reply_info_chat(message.chat.id, message.reply_to_message.id):  # Case for message form group
+        return "reply", db.out_reply_info_chat(message.chat.id, message.reply_to_message.id)[0]
 
 
 async def find_file_id(content_type: str, json_dict: dict) -> (str, str):
@@ -190,14 +185,18 @@ async def cooldown_timer_reply(seconds: float, chat_id: int) -> [(), (), ...]:
 
 
 async def reply_to_message(message):
-    if message.reply_to_message and message.reply_to_message.from_user.id == bot_id:
+    if message.reply_to_message and message.reply_to_message.from_user.id == bot_id and '-' in message.text:
         msg_to_reply = db.out_message_info_group(message.reply_to_message.message_id)
         print('info')
         if not msg_to_reply:
             return
         file_info = await find_file_id(message.content_type, message.json)
         print('info_file')
-        db.add_reply(message.id, message.media_group_id, msg_to_reply[0], message.content_type, *file_info)
+        try:
+            db.add_reply(message.id, message.media_group_id, msg_to_reply[0], message.content_type, file_info[0],
+                         file_info[1][1:])
+        except TypeError:
+            db.add_reply(message.id, message.media_group_id, msg_to_reply[0], message.content_type, *file_info)
         if len(db.out_replays_to_copy(msg_to_reply[0])) == 1:
             print('letssssss goooooo')
             reply = await cooldown_timer_reply(0.25, msg_to_reply[0])
@@ -209,11 +208,12 @@ async def reply_to_message(message):
             fail = await copy_messages(msg_to_reply[0], main_chat_id, reply, [], data["reply_to_msg"],
                                        reply_to_msg=msg_to_reply[2], add_c_above=True)
             if not fail:
-                await talk(message.chat.id, data["reply_success"], reply_to_msg=message.id)
+                print('aaaaasdasasaswesdsdf')
+                db.make_replays_copied(msg_to_reply[0], [i[0] for i in reply])
+                await bot.set_message_reaction(message.chat.id, message.id, [ReactionTypeEmoji(data["reaction_reply"])])
                 if msg_to_reply[2] % 7 == 0:
                     await talk(msg_to_reply[0], data["can_reply_to_msg"],
                                reply_to_msg=db.get_chat_state(msg_to_reply[0]), no_sound=True)
-                db.make_replays_copied(msg_to_reply[0], [i[0] for i in reply])
 
 
 @bot.message_handler(commands=["start", "ban", "unban", "post"])
@@ -260,7 +260,7 @@ async def start(message):
                     print('adin', messages_to_post)
                     del_params = sorted(int(i) for i in set(
                         map(str, message.text[message.text.index('-') + 1:].split())
-                    ) if i.isdigit())
+                        ) if i.isdigit())
                 except ValueError or IndexError:
                     await talk(main_chat_id, data["wrong_posting"], reply_to_msg=message.id)
                     return
@@ -285,14 +285,23 @@ async def take_a_post(message):
             reply_info = None, None
             if message.reply_to_message:
                 reply_info = await add_odd_replays(message)
-                add_c += reply_info[0]
+                add_c = ''
+                reaction = data["reaction_additional"]
+                if reply_info[0] == "reply":
+                    reaction = data["reaction_reply"]
+                await bot.set_message_reaction(message.chat.id, message.id, [ReactionTypeEmoji(reaction)])
             await copy_messages(main_chat_id, message.chat.id, msgs_to_forward, [], add_c,
                                 reply_to_msg=reply_info[1])
-            print('shtirliz was here', msgs_to_forward, [i[2] for i in msgs_to_forward])
             db.make_message_forwarded(message.chat.id, main_chat_id, [i[2] for i in msgs_to_forward])
-            print('wth')
-            await talk(message.chat.id, data["successfully_sent"], reply_to_msg=msgs_to_forward[0][2], no_sound=True)
+            if not message.reply_to_message:
+                await talk(message.chat.id, data["suc_sent"], reply_to_msg=msgs_to_forward[0][2], no_sound=True)
     else:
         await reply_to_message(message)
+
+
+@bot.message_reaction_handler()
+async def handle_y(call):
+    print(call, 1)
+
 
 asyncio.run(bot.polling())
