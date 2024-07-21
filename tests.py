@@ -1,3 +1,7 @@
-args = ['-1', 'aaa', '', '3', '10', '-9', '5', '6', '10', '15', '7']
+args = list(map(str, ".split()))
+dargs = {}
+for i in args:
+    if i not in dargs:
+        dargs[i] = args.count(i)
 
-print(sorted(int(i) for i in set(args) if i.isdigit()))
+print(dargs)
