@@ -160,4 +160,4 @@ cython_debug/
 #.idea/
 
 #bot_data
-token_and_chats.json
+bot_data.json
