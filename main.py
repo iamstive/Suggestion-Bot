@@ -81,19 +81,26 @@ async def find_file_id(content_type: str, json_dict: dict) -> (str, str):
 async def copy_messages(chat_id: int, from_chat_id: int, messages: list, not_copy: list, additional_caption: str, *args,
                         reply_to_msg: int = None, add_c_above: bool = True) -> None | bool:
     caption_from_media = messages[0][-1]
-    if caption_from_media and (0 not in not_copy):
+    if caption_from_media and (0 not in not_copy):  # Speculations with captions/texts in message :)
+        nki = '\n\n'
+        if not additional_caption:
+            nki = ''
         if add_c_above:
-            caption = additional_caption.format(*args) + '\n\n' + caption_from_media
+            caption = additional_caption.format(*args) + nki + caption_from_media
         else:
-            caption = caption_from_media + '\n\n' + additional_caption.format(*args)
+            nki = '\n'
+            caption = f'<blockquote>{caption_from_media}</blockquote>' + nki + additional_caption.format(*args)
     else:
         caption = additional_caption.format(*args)
-    for i in not_copy:
+
+    for i in reversed(not_copy):  # Deleting messages that should not be copied
+        print(i)
         if i != 0:
             try:
                 messages.pop(int(i) - 1)
             except IndexError:
                 continue
+
     try:
         if (len(messages[0]) == 9 and messages[0][3]) or (len(messages[0]) == 8 and messages[0][1]):
             media_group = []
@@ -154,6 +161,7 @@ async def copy_messages(chat_id: int, from_chat_id: int, messages: list, not_cop
                     await talk(chat_id, caption, reply_to_msg=reply_to_msg)
                     await bot.copy_message(chat_id, from_chat_id, message[(message[4] > 3) * 2])
                 caption = ''
+
     except Exception as e:
         if len(messages[0]) == 8:
             reply = [i[0] for i in messages]
@@ -161,7 +169,7 @@ async def copy_messages(chat_id: int, from_chat_id: int, messages: list, not_cop
         else:
             reply = [i[2] for i in messages]
             db.make_message_forwarded(chat_id, main_chat_id, reply, emp_msgs=True)
-        if 'USER_IS_BLOCKED' in str(e):
+        if '403' in str(e):
             await talk(main_chat_id, data["user_banned_bot"], reply_to_msg=messages[0][0])
             return True
 
@@ -177,8 +185,8 @@ async def cooldown_timer_reply(seconds: float, chat_id: int) -> [(), (), ...]:
 
 
 async def reply_to_message(message):
-    if message.reply_to_message and '-' in message.text and (message.reply_to_message.from_user.id == bot_id or
-                                                             db.out_reply_info_group(message.reply_to_message.id)):
+    if (message.reply_to_message and (message.content_type != 'text' or message.text[0] == '-')
+            and (message.reply_to_message.from_user.id == bot_id or db.out_reply_info_group(message.reply_to_message.id))):
         if db.out_message_info_group(message.reply_to_message.message_id):
             f = 1
             msg_to_reply = db.out_message_info_group(message.reply_to_message.message_id)
@@ -195,13 +203,16 @@ async def reply_to_message(message):
         except TypeError:
             db.add_reply(message.id, message.media_group_id, chat_id, message.content_type,
                          *file_info)
-        if len(db.out_replays_to_copy(msg_to_reply[0])) == 1:
+
+        if len(db.out_replays_to_copy(chat_id)) == 1:
             reply = await cooldown_timer_reply(0.1, chat_id)
+
             for i in db.out_banned_users():
-                if msg_to_reply[0] in i:
+                if chat_id in i:
                     db.make_replays_copied(chat_id, reply, banned_msgs=True)
                     return
-            fail = await copy_messages(chat_id, main_chat_id, reply, [], data["reply_to_msg"],
+
+            fail = await copy_messages(chat_id, main_chat_id, reply, [], data["reply_to_msg"] if f == 1 else '',
                                        reply_to_msg=msg_to_reply[2] if f == 1 else msg_to_reply[3], add_c_above=True)
             if not fail:
                 db.make_replays_copied(chat_id, [i[0] for i in reply])
@@ -211,13 +222,32 @@ async def reply_to_message(message):
                                reply_to_msg=db.get_chat_state(chat_id), no_sound=True)
 
 
-@bot.message_handler(commands=["start", "ban", "unban", "post"])
+@bot.message_handler(commands=["start", "ban", "unban", "post", "react", "help"])
 async def start(message):
     db.set_chat_state(message.chat.id, message.id)
+    if message.text == '/start':
+        await talk(message.chat.id, data["greeting_text1"])
+        await talk(message.chat.id, data["greeting_text2"], reply_to_msg=message.id + 1)
+
+    if message.text == '/help':
+        await talk(message.chat.id, data["general_commands"])
+        if message.chat.id == main_chat_id:
+            await talk(message.chat.id, data["admin_commands"])
+            
     if message.chat.id != main_chat_id:
-        if message.text == '/start':
-            await talk(message.chat.id, data["greeting_text1"])
-            await talk(message.chat.id, data["greeting_text2"], reply_to_msg=message.id + 1)
+        if '/react' in message.text and message.reply_to_message and message.reply_to_message.from_user.id == bot_id:
+            try:
+                reaction = message.text[message.text.index(" ") + 1:]
+                msg_info = db.out_reply_info_chat(message.chat.id, message.reply_to_message.id)
+                if not msg_info:
+                    return
+                msg_id = msg_info[0]
+                await bot.set_message_reaction(main_chat_id, msg_id, [ReactionTypeEmoji(reaction)], is_big=True)
+                await bot.set_message_reaction(message.chat.id, message.reply_to_message.id,
+                                               [ReactionTypeEmoji(reaction)])
+            except Exception as e:
+                await talk(message.chat.id, data["failed_set_reaction"], reply_to_msg=message.id, no_sound=True)
+
     else:
         if '/ban' in message.text and message.reply_to_message and message.reply_to_message.from_user.id == bot_id:
             msg_info = db.out_message_info_group(message.reply_to_message.id)
@@ -251,54 +281,71 @@ async def start(message):
             if messages_to_post[0][3]:
                 messages_to_post = db.out_messages_group_id(messages_to_post[0][0], messages_to_post[0][3])
             try:
+                add_c = ''
                 if '-' in message.text:
                     del_params = sorted(int(i) for i in set(
-                        map(str, message.text[message.text.index('-') + 1:].split())
-                    ) if i.isdigit())
-                add_c = message.text[message.text.index('!') + 1:] + '\n\n' if message.text.rfind(' ') != 0 else ''
+                        map(str, message.text[message.text.index('-') + 1:
+                                              message.text.index('!') if '!' in message.text else -1].split()))
+                                        if i.isdigit())
+                if '!' in message.text:
+                    add_c = message.text[message.text.index('!') + 1:] + '\n\n'
             except ValueError or IndexError:
                 await talk(main_chat_id, data["wrong_posting"], reply_to_msg=message.id)
                 return
+            print(messages_to_post, del_params)
             await copy_messages(channel_id, message.chat.id, messages_to_post, del_params, add_c +
-                                data["thanks_for_suggest"],messages_to_post[0][1], add_c_above=False)
+                                data["thanks_for_suggest"], messages_to_post[0][1], add_c_above=False)
             await talk(main_chat_id, data["posted_successful"], reply_to_msg=message.id)
+
+        if '/react' in message.text[:6] and message.reply_to_message and message.reply_to_message.from_user.id == bot_id:
+            try:
+                msg_info = db.out_message_info_group(message.reply_to_message.id)
+                if not msg_info:
+                    return
+                reaction = message.text[message.text.index(" ") + 1:]
+                await bot.set_message_reaction(msg_info[0], msg_info[2], [ReactionTypeEmoji(reaction)], is_big=True)
+                await bot.set_message_reaction(main_chat_id, message.reply_to_message.id, [ReactionTypeEmoji(reaction)])
+            except Exception as e:
+                print(e)
+                await talk(message.chat.id, data["failed_set_reaction"], reply_to_msg=message.id, no_sound=True)
 
 
 @bot.message_handler(content_types=["text", "photo", "animation", "video", "audio", "sticker", "voice", "video_note",
                                     "document", "poll"])
 async def take_a_post(message):
+    """Copies messages from user to main group"""
     db.set_chat_state(message.chat.id, message.id)
-    if message.chat.id != main_chat_id and await check_user_ban(message):
+    if message.chat.id != main_chat_id and await check_user_ban(message):  # Finding file id`s in tg if exists
         file_info = await find_file_id(message.content_type, message.json)
         db.add_message(message.chat.id, message.from_user.first_name, message.id, message.media_group_id,
                        message.content_type, *file_info)
+
         if len(db.out_messages_to_forward(message.chat.id)) == 1:
             add_c = f"""<a href="t.me/{message.from_user.username}">{message.from_user.first_name}</a> """
             msgs_to_forward = await cooldown_timer_forward(0.1, message.chat.id)
-            reply_info = None, None
-            if message.reply_to_message:
+            reply_id = None
+            failed_copy = True
+
+            if message.reply_to_message:  # Making beautiful reply if it needs
                 try:
-                    reply_info = await add_odd_replays(message)
+                    reply_type, reply_id = await add_odd_replays(message)
                     add_c = ''
                     reaction = data["reaction_additional"]
-                    if reply_info[0] == "reply":
+                    if reply_type == "reply":
                         reaction = data["reaction_reply"]
                     await bot.set_message_reaction(message.chat.id, message.id, [ReactionTypeEmoji(reaction)])
                 except TypeError:
-                    await talk(message.chat.id, data["suc_sent"], reply_to_msg=msgs_to_forward[0][2], no_sound=True)
-            await copy_messages(main_chat_id, message.chat.id, msgs_to_forward, [], add_c,
-                                reply_to_msg=reply_info[1])
-            db.make_message_forwarded(message.chat.id, main_chat_id, [i[2] for i in msgs_to_forward])
-            if not message.reply_to_message:
+                    reply_id = None
+
+            try:
+                await copy_messages(main_chat_id, message.chat.id, msgs_to_forward, [], add_c, reply_to_msg=reply_id)
+                failed_copy = False
                 await talk(message.chat.id, data["suc_sent"], reply_to_msg=msgs_to_forward[0][2], no_sound=True)
+            finally:
+                db.make_message_forwarded(message.chat.id, main_chat_id, [i[2] for i in msgs_to_forward],
+                                          emp_msgs=failed_copy)
     else:
         await reply_to_message(message)
-
-
-@bot.message_reaction_handler(lambda rc: True)
-async def handle_rc(rc: ReactionTypeEmoji):
-    print('it works')
-    print(rc, 1)
 
 
 asyncio.run(bot.polling())
