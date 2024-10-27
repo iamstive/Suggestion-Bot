@@ -10,7 +10,7 @@ class UsersSuggestsData(BaseModel):
     chat_id: int
     username: str
     msg_id: int
-    group_id: int
+    group_id: int | None
     id_in_group: int | None = None
     was_forwarded: int = 0
     content_type: str

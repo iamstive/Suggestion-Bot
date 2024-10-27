@@ -5,7 +5,7 @@ import serializers
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InputMediaPhoto, InputMediaAudio, InputMediaDocument, InputMediaVideo, ReactionTypeEmoji, Message
 import texts
-
+from serializers import UsersSuggestsData, UsersReplaysData
 
 # Initialising bot, database, creating buffer with groups of messages
 bot = AsyncTeleBot(settings.TOKEN)
@@ -32,6 +32,7 @@ async def talk(chat_id: int, text_to_send: str, *args, reply_to_msg=None, no_sou
 
 
 async def check_user_ban(message: Message) -> bool:
+    global ans_groups
     """
     Checks user that sent message in banned users table. Returns False if user was banned and talks him
     about this
@@ -90,7 +91,7 @@ async def find_file_id(message: Message) -> tuple[str, str]:
 async def copy_messages(
     chat_id: int,
     from_chat_id: int,
-    messages: list[Message],
+    messages: list,
     not_copy: list,
     additional_caption: str,
     *args,
@@ -199,27 +200,24 @@ async def copy_messages(
             return True
 
 
-async def cooldown_timer_forward(seconds: float, chat_id: int) -> list[tuple]:
+async def cooldown_timer_forward(seconds: float, chat_id: int) -> list[UsersSuggestsData]:
     await asyncio.sleep(seconds)
     return db.out_messages_to_forward(chat_id)
 
 
-async def cooldown_timer_reply(seconds: float, chat_id: int) -> list[tuple]:
+async def cooldown_timer_reply(seconds: float, chat_id: int) -> list[UsersReplaysData]:
     await asyncio.sleep(seconds)
     return db.out_replays_to_copy(chat_id)
 
 
 async def reply_to_message(message: Message) -> None:
-    replying = (
-        message.reply_to_message.from_user.id == settings.BOT_ID
+    reply_type = (message.reply_to_message and message.reply_to_message.from_user.id == settings.BOT_ID
         or
-        db.out_reply_info_group(message.reply_to_message.id)
-    )
-    
+        db.out_reply_info_group(message.reply_to_message.id))
     if all((
         message.reply_to_message,
         ((not message.text) or message.text[0] != '-'),
-        replying,
+        reply_type,
     )):
     
         if db.out_message_info_group(message.reply_to_message.message_id):
@@ -342,13 +340,15 @@ async def take_a_post(message: Message) -> None:
     """Copies messages from user to main group"""
     db.set_chat_state(message.chat.id, message.id)
     if message.chat.id != settings.MAIN_CHAT_ID and await check_user_ban(message):  # Finding file id`s in tg if exists
-        try:
-            file_info = await find_file_id(message)
-        except Exception as e:
-            print(e)
-        db.add_message(message.chat.id, message.from_user.first_name, message.id, message.media_group_id,
-                       message.content_type, *file_info)
-
+        file_info = await find_file_id(message)
+        msg_info = serializers.UsersSuggestsData(chat_id=message.chat.id,
+                                                 username=message.from_user.first_name,
+                                                 msg_id=message.id,
+                                                 group_id=message.media_group_id,
+                                                 content_type=message.content_type,
+                                                 file_id=file_info[0],
+                                                 caption=file_info[1])
+        db.add_message(msg_info)
         if len(db.out_messages_to_forward(message.chat.id)) == 1:
             add_c = f'<a href="t.me/{message.from_user.username}">{message.from_user.first_name}</a>'
             msgs_to_forward = await cooldown_timer_forward(0.1, message.chat.id)
