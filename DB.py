@@ -1,3 +1,4 @@
+import serializers
 import sqlite3
 
 
@@ -38,6 +39,27 @@ class Messages:
                                 f"'id_in_group', 'was_forwarded', 'content_type', 'file_id', 'caption')"
                                 f"VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 (chat_id, username, msg_id,  group_id, None, 0, content_type, file_id, caption))
+
+    # def add_message(self, user_suggests_data: serializers.UsersSuggestsData) -> None:
+    #     """Adding a message from the user to the table. Accepts the necessary data about the user and chat from
+    #     "message" dictionary. Example: message.chat.id, message.from_user.username, message. id"""
+    #     with self.connect:
+    #         self.cursor.execute(
+    #             f"INSERT INTO UsersSuggests('chat_id', 'username', 'msg_id', 'group_id',"
+    #             f"'id_in_group', 'was_forwarded', 'content_type', 'file_id', 'caption')"
+    #             f"VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    #             (
+    #                 user_suggests_data.chat_id,
+    #                 user_suggests_data.username,
+    #                 user_suggests_data.msg_id,
+    #                 user_suggests_data.group_id,
+    #                 None,
+    #                 0,
+    #                 user_suggests_data.content_type,
+    #                 user_suggests_data.file_id,
+    #                 user_suggests_data.caption,
+    #             )
+    #         )
 
     def out_messages_to_forward(self, chat_id: int) -> list[tuple]:
         """Returns all messages that have not yet been forwarded to the group in a list format with tuples"""
