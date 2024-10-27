@@ -39,7 +39,7 @@ class Messages:
                                 f"VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 (chat_id, username, msg_id,  group_id, None, 0, content_type, file_id, caption))
 
-    def out_messages_to_forward(self, chat_id: int) -> [(), (), ...]:
+    def out_messages_to_forward(self, chat_id: int) -> list[tuple]:
         """Returns all messages that have not yet been forwarded to the group in a list format with tuples"""
         with self.connect:
             return self.cursor.execute("SELECT * FROM UsersSuggests WHERE chat_id=? AND was_forwarded=?",
@@ -48,7 +48,6 @@ class Messages:
     def make_message_forwarded(self, chat_id: int, group_id: int, messages: list, emp_msgs: bool = False) -> None:
         """Marks all forwarded messages in the database"""
         with self.connect:
-            print(chat_id, group_id, messages)
             id_in_group = self.get_chat_state(group_id)
             for message in messages:
                 if emp_msgs:
@@ -61,7 +60,7 @@ class Messages:
             if not emp_msgs:
                 self.set_chat_state(group_id, id_in_group)
 
-    def out_message_info_group(self, id_in_group: int) -> ():
+    def out_message_info_group(self, id_in_group: int) -> tuple:
         """Returns information about any message sent by the bot in the group by message ID in main group"""
         with self.connect:
             msg = self.cursor.execute("SELECT * FROM UsersSuggests WHERE id_in_group=?", (id_in_group,)).fetchall()
@@ -69,7 +68,7 @@ class Messages:
                 return False
             return msg[0]
 
-    def out_message_info_chat(self, chat_id: int, msg_id: int) -> ():
+    def out_message_info_chat(self, chat_id: int, msg_id: int) -> tuple:
         """Returns information about any message sent by the bot in the group by message ID in user`s chat"""
         with self.connect:
             msg = self.cursor.execute(f"SELECT * FROM UsersSuggests WHERE chat_id=? AND msg_id=?",
@@ -78,7 +77,7 @@ class Messages:
                 return False
             return msg[0]
 
-    def out_messages_group_id(self, chat_id: int, group_id: int) -> [(), (), ...]:
+    def out_messages_group_id(self, chat_id: int, group_id: int) -> list[tuple]:
         """Returns all messages from media group in chat with chat_id"""
         with self.connect:
             return self.cursor.execute("SELECT * FROM UsersSuggests WHERE chat_id=? AND group_id=?",
@@ -91,7 +90,7 @@ class Messages:
             self.cursor.execute("INSERT INTO BannedUsers('chat_id', 'username') VALUES(?, ?)",
                                 (chat_id, username))
 
-    def out_banned_users(self) -> [(), (), ...]:
+    def out_banned_users(self) -> list[tuple]:
         """Returns all blocked users in a list format with tuples"""
         with self.connect:
             return self.cursor.execute("SELECT * FROM BannedUsers").fetchall()
@@ -111,7 +110,7 @@ class Messages:
                                 "'was_copied', 'content_type', 'file_id', 'caption') VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
                                 (id_in_group, group_id, chat_id, None, 0, content_type, file_id, caption))
 
-    def out_reply_info_group(self, id_in_group: int) -> ():
+    def out_reply_info_group(self, id_in_group: int) -> tuple:
         """Returns information about any reply to message forwarded by bot by its id in group"""
         with self.connect:
             msg = self.cursor.execute("SELECT * FROM UsersReplays WHERE id_in_group=?", (id_in_group,)).fetchall()
@@ -119,7 +118,7 @@ class Messages:
                 return False
             return msg[0]
 
-    def out_reply_info_chat(self, chat_id: int, msg_id: int) -> ():
+    def out_reply_info_chat(self, chat_id: int, msg_id: int) -> tuple:
         """Returns information about any reply to message forwarded by bot by its id in user`s chat"""
         with self.connect:
             msg = self.cursor.execute("SELECT * FROM UsersReplays WHERE chat_id=? AND msg_id=?",
@@ -128,7 +127,7 @@ class Messages:
                 return False
             return msg[0]
 
-    def out_replays_to_copy(self, chat_id: int) -> [(), (), ...]:
+    def out_replays_to_copy(self, chat_id: int) -> list[tuple]:
         """Returns all messages that have not yet been copied to the user in a list format with tuples"""
         with self.connect:
             return self.cursor.execute("SELECT * FROM UsersReplays WHERE chat_id=? AND was_copied=?",
@@ -151,8 +150,10 @@ class Messages:
         with self.connect:
             last_state = self.cursor.execute("SELECT * FROM UsersMsgStates WHERE chat_id=?", (chat_id,)).fetchall()
             if not last_state:
-                self.cursor.execute("INSERT INTO UsersMsgStates ('chat_id', 'msg_state') VALUES(?, ?)",
-                                    (chat_id, msg_state))
+                self.cursor.execute(
+                    "INSERT INTO UsersMsgStates ('chat_id', 'msg_state') VALUES(?, ?)",
+                    (chat_id, msg_state),
+                )
                 return
             self.cursor.execute("UPDATE UsersMsgStates SET msg_state=? WHERE chat_id=?", (msg_state, chat_id))
 
