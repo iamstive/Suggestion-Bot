@@ -185,8 +185,9 @@ async def cooldown_timer_reply(seconds: float, chat_id: int) -> [(), (), ...]:
 
 
 async def reply_to_message(message):
-    if (message.reply_to_message and (message.content_type != 'text' or message.text[0] == '-')
-            and (message.reply_to_message.from_user.id == bot_id or db.out_reply_info_group(message.reply_to_message.id))):
+    if (message.reply_to_message and ((not message.text) or message.text[0] != '-') and message.reply_to_message.from_user.id == bot_id
+            or db.out_reply_info_group(message.reply_to_message.id)):
+        print("началось")
         if db.out_message_info_group(message.reply_to_message.message_id):
             f = 1
             msg_to_reply = db.out_message_info_group(message.reply_to_message.message_id)
@@ -197,27 +198,27 @@ async def reply_to_message(message):
             return
         file_info = await find_file_id(message.content_type, message.json)
         chat_id = msg_to_reply[0] if f == 1 else msg_to_reply[2]
-        try:
-            db.add_reply(message.id, message.media_group_id, chat_id,
-                         message.content_type, file_info[0], file_info[1][1:])
-        except TypeError:
-            db.add_reply(message.id, message.media_group_id, chat_id, message.content_type,
-                         *file_info)
+        print(file_info, chat_id)
+        db.add_reply(message.id, message.media_group_id, chat_id,
+                     message.content_type, *file_info)
 
         if len(db.out_replays_to_copy(chat_id)) == 1:
             reply = await cooldown_timer_reply(0.1, chat_id)
-
+            print(reply)
             for i in db.out_banned_users():
                 if chat_id in i:
                     db.make_replays_copied(chat_id, reply, banned_msgs=True)
                     return
-
+            print(1111)
             fail = await copy_messages(chat_id, main_chat_id, reply, [], data["reply_to_msg"] if f == 1 else '',
                                        reply_to_msg=msg_to_reply[2] if f == 1 else msg_to_reply[3], add_c_above=True)
+            print(2222)
             if not fail:
                 db.make_replays_copied(chat_id, [i[0] for i in reply])
                 await bot.set_message_reaction(message.chat.id, message.id, [ReactionTypeEmoji(data["reaction_reply"])])
+                print(3333)
                 if msg_to_reply[2] % 7 == 0:
+                    print('cheta ne tak')
                     await talk(chat_id, data["can_reply_to_msg"],
                                reply_to_msg=db.get_chat_state(chat_id), no_sound=True)
 
@@ -245,7 +246,7 @@ async def start(message):
                 await bot.set_message_reaction(main_chat_id, msg_id, [ReactionTypeEmoji(reaction)], is_big=True)
                 await bot.set_message_reaction(message.chat.id, message.reply_to_message.id,
                                                [ReactionTypeEmoji(reaction)])
-            except Exception as e:
+            except:
                 await talk(message.chat.id, data["failed_set_reaction"], reply_to_msg=message.id, no_sound=True)
 
     else:
@@ -305,8 +306,7 @@ async def start(message):
                 reaction = message.text[message.text.index(" ") + 1:]
                 await bot.set_message_reaction(msg_info[0], msg_info[2], [ReactionTypeEmoji(reaction)], is_big=True)
                 await bot.set_message_reaction(main_chat_id, message.reply_to_message.id, [ReactionTypeEmoji(reaction)])
-            except Exception as e:
-                print(e)
+            except:
                 await talk(message.chat.id, data["failed_set_reaction"], reply_to_msg=message.id, no_sound=True)
 
 
