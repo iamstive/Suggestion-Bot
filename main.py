@@ -211,9 +211,10 @@ async def cooldown_timer_reply(seconds: float, chat_id: int) -> list[UsersReplay
 
 
 async def reply_to_message(message: Message) -> None:
-    reply_type = (message.reply_to_message and message.reply_to_message.from_user.id == settings.BOT_ID
-        or
-        db.out_reply_info_group(message.reply_to_message.id))
+    reply_type = (message.reply_to_message and
+                  (message.reply_to_message.from_user.id == settings.BOT_ID
+                  or
+                  db.out_reply_info_group(message.reply_to_message.id)))
     if all((
         message.reply_to_message,
         ((not message.text) or message.text[0] != '-'),
